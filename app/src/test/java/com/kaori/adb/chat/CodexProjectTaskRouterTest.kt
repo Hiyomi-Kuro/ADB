@@ -15,6 +15,8 @@ class CodexProjectTaskRouterTest {
         assertTrue(routed.contains("required_skills=acs-android-project,android-phone-adb"))
         assertTrue(routed.contains("ACS_PROJECT_NAME=学习助手"))
         assertTrue(routed.contains("ACS_PROJECT_ROOT=/storage/emulated/0/AndroidIDEProjects/学习助手"))
+        assertTrue(routed.contains("Execution gate: before a final response"))
+        assertTrue(routed.contains("do not invent a separate remote-write permission check"))
         assertEquals(original, CodexProjectTaskRouter.displayContent("user", routed))
     }
 

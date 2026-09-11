@@ -38,4 +38,25 @@ object AppResolver {
             .distinctBy { it.packageName }
             .sortedBy { it.packageName }
     }
+
+    fun searchCandidates(context: Context, query: String): List<AppCandidate> {
+        val value = query.trim()
+        if (value.isBlank()) return emptyList()
+
+        val packageManager = context.packageManager
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return packageManager.queryIntentActivities(launcherIntent, 0)
+            .map { info ->
+                AppCandidate(
+                    info.loadLabel(packageManager).toString(),
+                    info.activityInfo.packageName
+                )
+            }
+            .filter { candidate ->
+                candidate.label.contains(value, ignoreCase = true) ||
+                    candidate.packageName.contains(value, ignoreCase = true)
+            }
+            .distinctBy { it.packageName }
+            .sortedWith(compareBy<AppCandidate> { it.label }.thenBy { it.packageName })
+    }
 }

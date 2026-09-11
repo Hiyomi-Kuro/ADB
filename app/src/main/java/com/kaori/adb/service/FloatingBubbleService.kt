@@ -14,6 +14,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -36,6 +38,7 @@ import com.kaori.adb.chat.HarnessConversation
 import com.kaori.adb.chat.HarnessConversationSummary
 import com.kaori.adb.chat.HarnessMessage
 import com.kaori.adb.tools.AppResolver
+import com.kaori.adb.tools.LocalControlSuggestions
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -276,7 +279,7 @@ class FloatingBubbleService : Service() {
                 title = "设置",
                 subtitle = "DeepSeek Harness / ADB / 悬浮窗",
                 actions = listOf(
-                    OverlayAction("DeepSeek Harness") { showHarnessMenu() },
+                    OverlayAction("Codex") { showHarnessMenu() },
                     OverlayAction("连接 / 状态") { showConnectionMenu() },
                     OverlayAction("设备信息") { showDeviceMenu() },
                     OverlayAction("应用控制") { showAppMenu() },
@@ -506,8 +509,8 @@ class FloatingBubbleService : Service() {
     }
 
 
-    private fun sendLocalControlMessage(text: String) {
-        val plan = engine.plan(text)
+    private fun sendLocalControlMessage(text: String, executionText: String = text) {
+        val plan = engine.plan(executionText)
         chatBusy = true
         chatStatus = "本地模式 · 正在执行…"
         localMessages.add(
@@ -867,6 +870,50 @@ class FloatingBubbleService : Service() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = roundedBackground(Color.argb(34, 255, 255, 255), 12)
         }
+        val candidateColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(3), dp(2), 0)
+        }
+        fun updateLocalCandidates(raw: String) {
+            candidateColumn.removeAllViews()
+            if (conversationMode != ConversationMode.LOCAL || chatBusy) return
+
+            val suggestions = LocalControlSuggestions.matching(
+                raw,
+                AppResolver.searchCandidates(this@FloatingBubbleService, raw)
+            )
+            suggestions.forEach { suggestion ->
+                candidateColumn.addView(
+                    textView(suggestion.label, SECONDARY_TEXT_SP).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        minHeight = dp(36)
+                        setPadding(dp(10), dp(5), dp(10), dp(5))
+                        background = roundedBackground(Color.argb(28, 255, 255, 255), 10)
+                        isClickable = true
+                        isFocusable = true
+                        contentDescription = "执行本地命令 ${suggestion.label}"
+                        setOnClickListener {
+                            if (!chatBusy) {
+                                field.setText("")
+                                candidateColumn.removeAllViews()
+                                sendLocalControlMessage(suggestion.label, suggestion.command)
+                            }
+                        }
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(3) }
+                )
+            }
+        }
+        field.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                updateLocalCandidates(s?.toString().orEmpty())
+            }
+        })
         val submit = {
             val value = field.text.toString().trim()
             if (value.isBlank()) {
@@ -914,6 +961,13 @@ class FloatingBubbleService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(6) }
+        )
+        root.addView(
+            candidateColumn,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         )
         return root
     }

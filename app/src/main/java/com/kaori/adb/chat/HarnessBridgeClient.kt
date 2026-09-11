@@ -66,6 +66,9 @@ internal object CodexProjectTaskRouter {
                 appendLine("ACS_PROJECT_ROOT=/storage/emulated/0/AndroidIDEProjects/${projectTask.project}")
                 appendLine("The acs-android-project skill must establish its configured SSH connection and inspect that root first.")
                 appendLine("Never decide that source is missing by inspecting the default workspace. All search, edits, Git, builds, and tests remain in the ACS SSH session.")
+                appendLine("Execution gate: before a final response, use acs-android-project and run its initial ACS SSH inspection command. A planning-only answer is not a completed project task.")
+                appendLine("The project task authorizes the smallest scoped remote changes needed for completion; do not invent a separate remote-write permission check.")
+                appendLine("Never claim that a security policy, safety check, default workspace, or remote-write restriction blocked work unless an actual ACS SSH command returned that exact error. Report the command and concrete error, or continue in ACS.")
             }
             appendLine("If a required skill is unavailable in the active official ChatGPT Web/Codex session, stop and report that activation is unavailable; do not pretend it was used.")
             appendLine(ROUTING_SUFFIX)
