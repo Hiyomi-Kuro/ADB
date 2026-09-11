@@ -1,0 +1,61 @@
+package com.kaori.adb.tools
+
+import com.kaori.adb.agent.AgentTool
+
+class ToolRegistry(tools: List<AgentTool>) {
+    private val byName = tools.associateBy { it.name }
+
+    val names: Set<String>
+        get() = byName.keys
+
+    fun get(name: String): AgentTool? = byName[name]
+
+    fun all(): List<AgentTool> = byName.values.sortedBy { it.name }
+
+    companion object {
+        fun default(): ToolRegistry = ToolRegistry(
+            listOf(
+                AcsAdbStatusTool(),
+                AcsAdbActivitiesTool(),
+                AcsAdbStartActivityTool(),
+                AcsAdbForceStopTool(),
+                AcsAdbShellTool(),
+                DeviceInfoTool(),
+                DeviceStateTool(),
+                BatteryTool(),
+                DeviceVolumeTool(),
+                AcsAdbKeyEventTool(),
+                AppLaunchTool(),
+                AppIntentTool(),
+                ClipboardReadTool(),
+                ClipboardWriteTool(),
+                WorkflowRunTool(),
+                UiObserveTool(),
+                UiWaitForTool(),
+                UiDumpTool(),
+                UiClickTool(),
+                UiLongClickTool(),
+                UiInputTextTool(),
+                UiScrollTool(),
+                UiTapTool(),
+                UiSwipeTool(),
+                UiBackTool(),
+                UiHomeTool(),
+                UiRecentsTool(),
+                UiNotificationsTool(),
+                UiQuickSettingsTool(),
+                UiPowerDialogTool(),
+                UiLockScreenTool(),
+                UiDismissShadeTool(),
+                UiAllAppsTool(),
+                UiDpadTool(),
+                UiMenuTool(),
+                UiMediaPlayPauseTool(),
+                UiSplitScreenTool(),
+                UiTakeScreenshotTool(),
+                UiLongPressTool(),
+                UiPinchTool()
+            )
+        )
+    }
+}

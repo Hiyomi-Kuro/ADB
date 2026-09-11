@@ -1,0 +1,162 @@
+package com.kaori.adb.chat
+
+import android.content.Context
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+data class HarnessMessage(
+    val role: String,
+    val content: String,
+    val createdAt: String,
+    val failed: Boolean = false
+)
+
+data class HarnessConversationSummary(
+    val id: String,
+    val title: String,
+    val updatedAt: String,
+    val preview: String
+)
+
+data class HarnessConversation(
+    val id: String,
+    val title: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val messages: List<HarnessMessage>
+)
+
+class HarnessBridgeClient(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    var baseUrl: String
+        get() = normalizeBaseUrl(prefs.getString(PREF_BASE_URL, DEFAULT_BASE_URL).orEmpty())
+        set(value) {
+            prefs.edit().putString(PREF_BASE_URL, normalizeBaseUrl(value)).apply()
+        }
+
+    fun health(): String {
+        val response = request("GET", "/api/health")
+        return if (response.optBoolean("ok")) {
+            "DeepSeek Harness 已连接 · ${response.optString("profile", "headless")}"
+        } else {
+            "DeepSeek Harness 未就绪"
+        }
+    }
+
+    fun listConversations(): List<HarnessConversationSummary> {
+        val array = request("GET", "/api/conversations").getJSONArray("conversations")
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.getJSONObject(index)
+                add(
+                    HarnessConversationSummary(
+                        id = item.getString("id"),
+                        title = item.optString("title", "新对话"),
+                        updatedAt = item.optString("updatedAt", ""),
+                        preview = item.optString("preview", "")
+                    )
+                )
+            }
+        }
+    }
+
+    fun createConversation(): HarnessConversation {
+        val response = request("POST", "/api/conversations", JSONObject())
+        return parseConversation(response.getJSONObject("conversation"))
+    }
+
+    fun loadConversation(id: String): HarnessConversation {
+        val response = request("GET", "/api/conversations/$id")
+        return parseConversation(response.getJSONObject("conversation"))
+    }
+
+    fun deleteConversation(id: String) {
+        request("DELETE", "/api/conversations/$id")
+    }
+
+    fun sendMessage(id: String, message: String): HarnessConversation {
+        val response = request(
+            method = "POST",
+            path = "/api/conversations/$id/messages",
+            body = JSONObject().put("message", message),
+            readTimeoutMs = CHAT_READ_TIMEOUT_MS
+        )
+        return parseConversation(response.getJSONObject("conversation"))
+    }
+
+    private fun parseConversation(value: JSONObject): HarnessConversation {
+        val messagesJson = value.getJSONArray("messages")
+        val messages = buildList {
+            for (index in 0 until messagesJson.length()) {
+                val message = messagesJson.getJSONObject(index)
+                add(
+                    HarnessMessage(
+                        role = message.optString("role", "assistant"),
+                        content = message.optString("content", ""),
+                        createdAt = message.optString("createdAt", ""),
+                        failed = message.optBoolean("failed", false)
+                    )
+                )
+            }
+        }
+        return HarnessConversation(
+            id = value.getString("id"),
+            title = value.optString("title", "新对话"),
+            createdAt = value.optString("createdAt", ""),
+            updatedAt = value.optString("updatedAt", ""),
+            messages = messages
+        )
+    }
+
+    private fun request(
+        method: String,
+        path: String,
+        body: JSONObject? = null,
+        readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS
+    ): JSONObject {
+        val connection = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = readTimeoutMs
+            useCaches = false
+            setRequestProperty("Accept", "application/json")
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+        }
+        try {
+            if (body != null) {
+                connection.outputStream.use { output ->
+                    output.write(body.toString().toByteArray(Charsets.UTF_8))
+                }
+            }
+            val status = connection.responseCode
+            val input = if (status in 200..299) connection.inputStream else connection.errorStream
+            val text = input?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            val json = if (text.isBlank()) JSONObject() else JSONObject(text)
+            if (status !in 200..299) {
+                throw IllegalStateException(json.optString("error", "HTTP $status"))
+            }
+            return json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun normalizeBaseUrl(value: String): String {
+        val trimmed = value.trim().ifBlank { DEFAULT_BASE_URL }
+        return trimmed.removeSuffix("/")
+    }
+
+    companion object {
+        const val DEFAULT_BASE_URL = "http://127.0.0.1:8765"
+        private const val PREFS_NAME = "harness_bridge"
+        private const val PREF_BASE_URL = "base_url"
+        private const val CONNECT_TIMEOUT_MS = 5_000
+        private const val DEFAULT_READ_TIMEOUT_MS = 15_000
+        private const val CHAT_READ_TIMEOUT_MS = 360_000
+    }
+}

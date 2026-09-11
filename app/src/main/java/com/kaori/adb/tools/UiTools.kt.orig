@@ -1,0 +1,76 @@
+package com.kaori.adb.tools
+
+import android.content.Context
+import com.kaori.adb.accessibility.AgentAccessibilityService
+import com.kaori.adb.agent.AgentTool
+import com.kaori.adb.agent.RiskLevel
+import com.kaori.adb.agent.ToolResult
+
+private fun serviceOrError(): Pair<AgentAccessibilityService?, ToolResult?> {
+    val service = AgentAccessibilityService.instance
+    return if (service == null) {
+        null to ToolResult(false, "无障碍服务未连接，请先在系统设置中启用 ADB 无障碍控制。")
+    } else {
+        service to null
+    }
+}
+
+class UiDumpTool : AgentTool {
+    override val name = "ui.dump"
+    override val risk = RiskLevel.GREEN
+
+    override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        val (service, error) = serviceOrError()
+        if (error != null) return error
+        val dump = service!!.dumpUi()
+        return ToolResult(true, dump, mapOf("ui" to dump))
+    }
+}
+
+class UiClickTool : AgentTool {
+    override val name = "ui.click"
+    override val risk = RiskLevel.YELLOW
+
+    override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        val text = arguments["text"] ?: return ToolResult(false, "缺少 text 参数")
+        val (service, error) = serviceOrError()
+        if (error != null) return error
+        val ok = service!!.clickText(text)
+        return ToolResult(ok, if (ok) "已点击：$text" else "未找到可点击控件：$text")
+    }
+}
+
+class UiInputTextTool : AgentTool {
+    override val name = "ui.input_text"
+    override val risk = RiskLevel.YELLOW
+
+    override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        val text = arguments["text"] ?: return ToolResult(false, "缺少 text 参数")
+        val (service, error) = serviceOrError()
+        if (error != null) return error
+        val ok = service!!.inputText(text)
+        return ToolResult(ok, if (ok) "已输入文本" else "没有找到可编辑输入框")
+    }
+}
+
+class UiBackTool : AgentTool {
+    override val name = "ui.back"
+    override val risk = RiskLevel.GREEN
+    override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        val (service, error) = serviceOrError()
+        if (error != null) return error
+        val ok = service!!.pressBack()
+        return ToolResult(ok, if (ok) "已执行返回" else "返回动作失败")
+    }
+}
+
+class UiHomeTool : AgentTool {
+    override val name = "ui.home"
+    override val risk = RiskLevel.GREEN
+    override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        val (service, error) = serviceOrError()
+        if (error != null) return error
+        val ok = service!!.pressHome()
+        return ToolResult(ok, if (ok) "已回到桌面" else "Home 动作失败")
+    }
+}

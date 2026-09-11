@@ -1,0 +1,12 @@
+--- app/src/main/java/com/kaori/adb/chat/HarnessBridgeClient.kt
++++ app/src/main/java/com/kaori/adb/chat/HarnessBridgeClient.kt
+@@ -3,4 +3,9 @@
+ import android.content.Context
+ import org.json.JSONObject
+ import java.net.HttpURLConnection
+ import java.net.URL
++import java.security.MessageDigest
++import java.security.cert.CertificateException
++import java.security.cert.X509Certificate
++import javax.net.ssl.HttpsURLConnection
++import javax.net.ssl.SSLContext

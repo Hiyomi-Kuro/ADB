@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">ADB</string>
+    <string name="accessibility_service_name">ADB 无障碍控制</string>
+    <string name="accessibility_service_description">允许 ADB 读取当前界面并执行点击、输入、滚动与导航动作。</string>
+    <string name="overlay_channel_name">AI 手机控制中枢</string>
+    <string name="overlay_notification">悬浮条正在运行</string>
+</resources>
