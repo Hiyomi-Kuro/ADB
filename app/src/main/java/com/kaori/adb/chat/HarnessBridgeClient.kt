@@ -9,7 +9,7 @@ import java.security.cert.X509Certificate
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 
-data class HarnessMessage(
+data class CodexMessage(
     val role: String,
     val content: String,
     val createdAt: String,
@@ -17,7 +17,7 @@ data class HarnessMessage(
     val streaming: Boolean = false
 )
 
-data class HarnessConversationSummary(
+data class CodexConversationSummary(
     val id: String,
     val title: String,
     val updatedAt: String,
@@ -25,8 +25,8 @@ data class HarnessConversationSummary(
 )
 
 /**
- * Adds an app-owned routing envelope before the Harness receives a message.
- * It works with the stable message field, so ordinary Harness upgrades cannot
+ * Adds an app-owned routing envelope before the Codex receives a message.
+ * It works with the stable message field, so ordinary Codex upgrades cannot
  * remove the dispatch intent before it reaches the official ChatGPT Web/Codex session.
  */
 internal object CodexProjectTaskRouter {
@@ -43,7 +43,7 @@ internal object CodexProjectTaskRouter {
     private const val LEGACY_ROUTING_PREFIX = "[ACS_CODEX_PROJECT_ROUTING]"
     private const val LEGACY_ROUTING_SUFFIX = "[/ACS_CODEX_PROJECT_ROUTING]"
 
-    fun prepareForHarness(userMessage: String): String {
+    fun prepareForCodex(userMessage: String): String {
         val projectTask = parseProjectTask(userMessage)
         val requestedSkills = explicitSkillPattern.findAll(userMessage)
             .map { match -> match.groupValues[1] }
@@ -113,15 +113,15 @@ internal object CodexProjectTaskRouter {
             project !in setOf(".", "..") &&
             project.none { character -> character.code in setOf(0, 47, 92) }
 }
-data class HarnessConversation(
+data class CodexConversation(
     val id: String,
     val title: String,
     val createdAt: String,
     val updatedAt: String,
-    val messages: List<HarnessMessage>
+    val messages: List<CodexMessage>
 )
 
-class HarnessBridgeClient(context: Context) {
+class CodexBridgeClient(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     var baseUrl: String
@@ -135,19 +135,19 @@ class HarnessBridgeClient(context: Context) {
     fun health(): String {
         val response = request("GET", "/api/health")
         return if (response.optBoolean("ok")) {
-            "DeepSeek Harness 已连接 · ${response.optString("profile", "headless")}" 
+            "Codex 已连接 · ${response.optString("profile", "headless")}" 
         } else {
-            "DeepSeek Harness 未就绪"
+            "Codex 未就绪"
         }
     }
 
-    fun listConversations(): List<HarnessConversationSummary> {
+    fun listConversations(): List<CodexConversationSummary> {
         val array = request("GET", "/api/conversations").getJSONArray("conversations")
         return buildList {
             for (index in 0 until array.length()) {
                 val item = array.getJSONObject(index)
                 add(
-                    HarnessConversationSummary(
+                    CodexConversationSummary(
                         id = item.getString("id"),
                         title = CodexProjectTaskRouter.displayTitle(item.optString("title", "新对话")),
                         updatedAt = item.optString("updatedAt", ""),
@@ -158,12 +158,12 @@ class HarnessBridgeClient(context: Context) {
         }
     }
 
-    fun createConversation(): HarnessConversation {
+    fun createConversation(): CodexConversation {
         val response = request("POST", "/api/conversations", JSONObject())
         return parseConversation(response.getJSONObject("conversation"))
     }
 
-    fun loadConversation(id: String): HarnessConversation {
+    fun loadConversation(id: String): CodexConversation {
         val response = request("GET", "/api/conversations/$id")
         return parseConversation(response.getJSONObject("conversation"))
     }
@@ -180,7 +180,7 @@ class HarnessBridgeClient(context: Context) {
         return conversations.size
     }
 
-    fun sendMessage(id: String, message: String): HarnessConversation {
+    fun sendMessage(id: String, message: String): CodexConversation {
         val response = request(
             method = "POST",
             path = "/api/conversations/$id/messages",
@@ -190,15 +190,15 @@ class HarnessBridgeClient(context: Context) {
         return parseConversation(response.getJSONObject("conversation"))
     }
 
-    fun prepareMessageForHarness(message: String): String = CodexProjectTaskRouter.prepareForHarness(message)
+    fun prepareMessageForCodex(message: String): String = CodexProjectTaskRouter.prepareForCodex(message)
 
-    private fun parseConversation(value: JSONObject): HarnessConversation {
+    private fun parseConversation(value: JSONObject): CodexConversation {
         val messagesJson = value.getJSONArray("messages")
         val messages = buildList {
             for (index in 0 until messagesJson.length()) {
                 val message = messagesJson.getJSONObject(index)
                 add(
-                    HarnessMessage(
+                    CodexMessage(
                         role = message.optString("role", "assistant"),
                         content = CodexProjectTaskRouter.displayContent(message.optString("role", "assistant"), message.optString("content", "")),
                         createdAt = message.optString("createdAt", ""),
@@ -208,7 +208,7 @@ class HarnessBridgeClient(context: Context) {
                 )
             }
         }
-        return HarnessConversation(
+        return CodexConversation(
             id = value.getString("id"),
             title = CodexProjectTaskRouter.displayTitle(value.optString("title", "新对话")),
             createdAt = value.optString("createdAt", ""),
@@ -231,7 +231,7 @@ class HarnessBridgeClient(context: Context) {
                     .digest(certificate.encoded)
                     .joinToString("") { byte -> "%02X".format(byte.toInt() and 0xff) }
                 if (!actual.equals(PINNED_CERT_SHA256, ignoreCase = true)) {
-                    throw CertificateException("DeepSeek Harness certificate mismatch")
+                    throw CertificateException("Codex certificate mismatch")
                 }
             }
 
@@ -251,7 +251,7 @@ class HarnessBridgeClient(context: Context) {
     ): JSONObject {
         val rawConnection = URL("$baseUrl$path").openConnection()
         require(rawConnection is HttpsURLConnection) {
-            "DeepSeek Harness bridge only supports HTTPS"
+            "Codex bridge only supports HTTPS"
         }
         val connection = rawConnection.apply {
             requestMethod = method
@@ -313,6 +313,6 @@ class HarnessBridgeClient(context: Context) {
         private const val PREF_BASE_URL = "base_url"
         private const val CONNECT_TIMEOUT_MS = 5_000
         private const val DEFAULT_READ_TIMEOUT_MS = 15_000
-        private const val CHAT_READ_TIMEOUT_MS = 0 // 0 keeps user-initiated Harness tasks open until they finish.
+        private const val CHAT_READ_TIMEOUT_MS = 0 // 0 keeps user-initiated Codex tasks open until they finish.
     }
 }

@@ -33,10 +33,10 @@ import com.kaori.adb.acs.AcsAdbTransport
 import com.kaori.adb.accessibility.AgentAccessibilityService
 import com.kaori.adb.agent.AgentEngine
 import com.kaori.adb.agent.ToolCall
-import com.kaori.adb.chat.HarnessBridgeClient
-import com.kaori.adb.chat.HarnessConversation
-import com.kaori.adb.chat.HarnessConversationSummary
-import com.kaori.adb.chat.HarnessMessage
+import com.kaori.adb.chat.CodexBridgeClient
+import com.kaori.adb.chat.CodexConversation
+import com.kaori.adb.chat.CodexConversationSummary
+import com.kaori.adb.chat.CodexMessage
 import com.kaori.adb.tools.AppResolver
 import com.kaori.adb.tools.LocalControlSuggestions
 import java.util.ArrayDeque
@@ -57,15 +57,15 @@ class FloatingBubbleService : Service() {
     ) {
         LOCAL(
             label = "本地",
-            description = "仅使用 ADB 应用内置本地工具操控手机，不调用 Harness。"
+            description = "仅使用 ADB 应用内置本地工具操控手机，不调用 Codex。"
         ),
         CHAT(
             label = "聊天",
-            description = "通过 Harness 聊天或执行任务，不走本地快速控制。"
+            description = "通过 Codex 聊天或执行任务，不走本地快速控制。"
         ),
         CONTROL(
             label = "操控",
-            description = "所有手机操控都必须经过 Harness 工具链，禁止本地快速控制。"
+            description = "所有手机操控都必须经过 Codex 工具链，禁止本地快速控制。"
         )
     }
 
@@ -78,7 +78,7 @@ class FloatingBubbleService : Service() {
     private lateinit var windowManager: WindowManager
     private lateinit var engine: AgentEngine
     private lateinit var acsAdb: AcsAdbTransport
-    private lateinit var harnessClient: HarnessBridgeClient
+    private lateinit var codexClient: CodexBridgeClient
     private val worker = Executors.newSingleThreadExecutor()
     private val harnessPollWorker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -93,8 +93,8 @@ class FloatingBubbleService : Service() {
     private var barWidthDp = DEFAULT_BAR_WIDTH_DP
     private var barAlphaPercent = DEFAULT_BAR_ALPHA_PERCENT
     private var panelAlphaPercent = DEFAULT_PANEL_ALPHA_PERCENT
-    private val chatMessages = mutableListOf<HarnessMessage>()
-    private val localMessages = mutableListOf<HarnessMessage>()
+    private val chatMessages = mutableListOf<CodexMessage>()
+    private val localMessages = mutableListOf<CodexMessage>()
     private var currentConversationId: String? = null
     private var currentConversationTitle = "新对话"
     private var conversationMode = ConversationMode.CHAT
@@ -107,7 +107,7 @@ class FloatingBubbleService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         engine = AgentEngine(applicationContext)
         acsAdb = AcsAdbTransport(applicationContext)
-        harnessClient = HarnessBridgeClient(applicationContext)
+        codexClient = CodexBridgeClient(applicationContext)
         loadBarPreferences()
         createChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -277,9 +277,9 @@ class FloatingBubbleService : Service() {
         pushPanel {
             buildMenuPanel(
                 title = "设置",
-                subtitle = "DeepSeek Harness / ADB / 悬浮窗",
+                subtitle = "Codex / ADB / 悬浮窗",
                 actions = listOf(
-                    OverlayAction("Codex") { showHarnessMenu() },
+                    OverlayAction("Codex") { showCodexMenu() },
                     OverlayAction("连接 / 状态") { showConnectionMenu() },
                     OverlayAction("设备信息") { showDeviceMenu() },
                     OverlayAction("应用控制") { showAppMenu() },
@@ -298,20 +298,20 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun showHarnessMenu() {
+    private fun showCodexMenu() {
         pushPanel {
             buildMenuPanel(
-                title = "DeepSeek Harness",
+                title = "Codex",
                 subtitle = "本机 HTTPS 桥接 · Codex Web GPT",
                 actions = listOf(
-                    OverlayAction("连接状态") { runHarnessHealthCheck() },
-                    OverlayAction("桥接地址\n${harnessClient.baseUrl}") {
+                    OverlayAction("连接状态") { runCodexHealthCheck() },
+                    OverlayAction("桥接地址\n${codexClient.baseUrl}") {
                         pushInputPanel(
                             "桥接地址",
-                            HarnessBridgeClient.DEFAULT_BASE_URL
+                            CodexBridgeClient.DEFAULT_BASE_URL
                         ) { value ->
-                            harnessClient.baseUrl = value
-                            pushInfo("已保存", "DeepSeek Harness 地址：${harnessClient.baseUrl}")
+                            codexClient.baseUrl = value
+                            pushInfo("已保存", "Codex 地址：${codexClient.baseUrl}")
                         }
                     }
                 )
@@ -319,18 +319,18 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun runHarnessHealthCheck() {
+    private fun runCodexHealthCheck() {
         val tag = "harness-health:${++toolSequence}"
         pushPanel(tag = tag) {
-            buildInfoPanel("连接中", "正在检查 DeepSeek Harness…")
+            buildInfoPanel("连接中", "正在检查 Codex…")
         }
         worker.execute {
-            val result = runCatching { harnessClient.health() }
+            val result = runCatching { codexClient.health() }
             main.post {
                 if (panelStack.peekLast()?.tag != tag) return@post
                 replaceTopPanel(tag = tag) {
                     buildInfoPanel(
-                        title = if (result.isSuccess) "DeepSeek Harness" else "连接失败",
+                        title = if (result.isSuccess) "Codex" else "连接失败",
                         message = result.getOrElse { it.message ?: it.javaClass.simpleName }
                     )
                 }
@@ -363,10 +363,10 @@ class FloatingBubbleService : Service() {
         renderChatPanel()
     }
 
-    private fun activeMessages(): List<HarnessMessage> =
+    private fun activeMessages(): List<CodexMessage> =
         if (conversationMode == ConversationMode.LOCAL) localMessages else chatMessages
 
-    private fun adoptConversation(conversation: HarnessConversation): Boolean {
+    private fun adoptConversation(conversation: CodexConversation): Boolean {
         val changed = currentConversationId != conversation.id ||
             currentConversationTitle != conversation.title ||
             chatMessages != conversation.messages
@@ -394,11 +394,11 @@ class FloatingBubbleService : Service() {
         if (text.isBlank() || chatBusy) return
         when (conversationMode) {
             ConversationMode.LOCAL -> sendLocalControlMessage(text)
-            ConversationMode.CHAT, ConversationMode.CONTROL -> sendHarnessMessage(text)
+            ConversationMode.CHAT, ConversationMode.CONTROL -> sendCodexMessage(text)
         }
     }
 
-    private fun sendHarnessMessage(text: String) {
+    private fun sendCodexMessage(text: String) {
         chatBusy = true
         chatStatus = if (conversationMode == ConversationMode.CONTROL) {
             "Codex 正在处理…"
@@ -407,10 +407,10 @@ class FloatingBubbleService : Service() {
         }
         val pollGeneration = harnessPollGeneration + 1
         harnessPollGeneration = pollGeneration
-        val harnessMessage = harnessClient.prepareMessageForHarness(text)
+        val harnessMessage = codexClient.prepareMessageForCodex(text)
         val existingConversationId = currentConversationId
         chatMessages.add(
-            HarnessMessage(
+            CodexMessage(
                 role = "user",
                 content = text,
                 createdAt = ""
@@ -422,9 +422,9 @@ class FloatingBubbleService : Service() {
             var conversationId: String? = null
             val result = runCatching {
                 val conversation = if (existingConversationId == null) {
-                    harnessClient.createConversation()
+                    codexClient.createConversation()
                 } else {
-                    harnessClient.loadConversation(existingConversationId)
+                    codexClient.loadConversation(existingConversationId)
                 }
                 conversationId = conversation.id
                 main.post {
@@ -433,11 +433,11 @@ class FloatingBubbleService : Service() {
                     currentConversationTitle = conversation.title
                     renderChatPanel()
                 }
-                startHarnessConversationPolling(conversation.id, pollGeneration)
-                harnessClient.sendMessage(conversation.id, harnessMessage)
+                startCodexConversationPolling(conversation.id, pollGeneration)
+                codexClient.sendMessage(conversation.id, harnessMessage)
             }
             val failureSnapshot = if (result.isFailure) {
-                conversationId?.let { id -> runCatching { harnessClient.loadConversation(id) }.getOrNull() }
+                conversationId?.let { id -> runCatching { codexClient.loadConversation(id) }.getOrNull() }
             } else {
                 null
             }
@@ -457,7 +457,7 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun startHarnessConversationPolling(conversationId: String, generation: Long) {
+    private fun startCodexConversationPolling(conversationId: String, generation: Long) {
         harnessPollWorker.execute {
             try {
                 Thread.sleep(HARNESS_MESSAGE_POLL_MS)
@@ -466,7 +466,7 @@ class FloatingBubbleService : Service() {
                 return@execute
             }
             while (harnessPollGeneration == generation && !Thread.currentThread().isInterrupted) {
-                val snapshot = runCatching { harnessClient.loadConversation(conversationId) }.getOrNull()
+                val snapshot = runCatching { codexClient.loadConversation(conversationId) }.getOrNull()
                 if (snapshot != null) {
                     main.post {
                         if (harnessPollGeneration != generation) return@post
@@ -514,7 +514,7 @@ class FloatingBubbleService : Service() {
         chatBusy = true
         chatStatus = "本地模式 · 正在执行…"
         localMessages.add(
-            HarnessMessage(
+            CodexMessage(
                 role = "user",
                 content = text,
                 createdAt = ""
@@ -537,7 +537,7 @@ class FloatingBubbleService : Service() {
                     }
                 }
                 localMessages.add(
-                    HarnessMessage(
+                    CodexMessage(
                         role = "assistant",
                         content = "本地模式：$reply",
                         createdAt = "",
@@ -561,7 +561,7 @@ class FloatingBubbleService : Service() {
             buildInfoPanel("历史对话", "正在加载…")
         }
         worker.execute {
-            val result = runCatching { harnessClient.listConversations() }
+            val result = runCatching { codexClient.listConversations() }
             main.post {
                 if (panelStack.peekLast()?.tag != tag) return@post
                 replaceTopPanel(tag = HISTORY_PANEL_TAG) {
@@ -580,7 +580,7 @@ class FloatingBubbleService : Service() {
             buildInfoPanel("加载对话", "正在读取历史对话…")
         }
         worker.execute {
-            val result = runCatching { harnessClient.loadConversation(id) }
+            val result = runCatching { codexClient.loadConversation(id) }
             main.post {
                 if (panelStack.peekLast()?.tag != tag) return@post
                 result.onSuccess { conversation ->
@@ -596,7 +596,7 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun confirmDeleteConversation(summary: HarnessConversationSummary) {
+    private fun confirmDeleteConversation(summary: CodexConversationSummary) {
         pushPanel {
             buildInfoPanel(
                 title = "删除历史对话",
@@ -616,8 +616,8 @@ class FloatingBubbleService : Service() {
         }
         worker.execute {
             val result = runCatching {
-                harnessClient.deleteConversation(id)
-                harnessClient.listConversations()
+                codexClient.deleteConversation(id)
+                codexClient.listConversations()
             }
             main.post {
                 if (panelStack.peekLast()?.tag != tag) return@post
@@ -646,7 +646,7 @@ class FloatingBubbleService : Service() {
             buildInfoPanel("清空中", "正在删除全部历史对话…")
         }
         worker.execute {
-            val result = runCatching { harnessClient.deleteAllConversations() }
+            val result = runCatching { codexClient.deleteAllConversations() }
             main.post {
                 if (panelStack.peekLast()?.tag != tag) return@post
                 result.onSuccess { deletedCount ->
@@ -666,7 +666,7 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun buildHistoryPanel(conversations: List<HarnessConversationSummary>): View {
+    private fun buildHistoryPanel(conversations: List<CodexConversationSummary>): View {
         if (conversations.isEmpty()) {
             return buildInfoPanel("历史对话", "暂无历史对话。")
         }
