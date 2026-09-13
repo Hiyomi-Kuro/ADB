@@ -1,0 +1,19 @@
+--- app/src/main/java/com/kaori/adb/model/RuleBasedModelProvider.kt
++++ app/src/main/java/com/kaori/adb/model/RuleBasedModelProvider.kt
+@@ -42,10 +42,16 @@
+         if (text.contains("播放暂停") || text.contains("播放/暂停") || lower == "media play pause") {
+             add("device.keyevent", mapOf("key" to "KEYCODE_MEDIA_PLAY_PAUSE"))
+         }
+         if (text.contains("内存") || text.contains("存储") || text.contains("设备信息") || text.contains("前台应用")) {
+             add("device.info")
+         }
++        if (text.contains("观察当前界面") || text == "观察界面" || text == "界面观察") {
++            add("ui.observe", mapOf("base64" to "false"))
++        }
+         if (text.contains("读取界面") || text.contains("界面结构") || text.contains("UI树", ignoreCase = true)) {
+             add("ui.dump")
+         }
++        if (text == "读取剪贴板" || text == "查看剪贴板" || text == "剪贴板内容") {
++            add("clipboard.read")
++        }
+         if (text == "返回" || text.endsWith("返回键")) add("ui.back")

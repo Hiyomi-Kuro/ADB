@@ -894,9 +894,15 @@ class FloatingBubbleService : Service() {
                         contentDescription = "执行本地命令 ${suggestion.label}"
                         setOnClickListener {
                             if (!chatBusy) {
-                                field.setText("")
                                 candidateColumn.removeAllViews()
-                                sendLocalControlMessage(suggestion.label, suggestion.command)
+                                if (suggestion.executeImmediately) {
+                                    field.setText("")
+                                    sendLocalControlMessage(suggestion.label, suggestion.command)
+                                } else {
+                                    field.setText(suggestion.command)
+                                    field.setSelection(field.text.length)
+                                    field.requestFocus()
+                                }
                             }
                         }
                     },

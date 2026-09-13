@@ -232,6 +232,7 @@ class AcsAdbTransport(context: Context) {
             "KEYCODE_WAKEUP",
             "KEYCODE_MEDIA_PLAY_PAUSE",
             "KEYCODE_MEDIA_NEXT",
+            "KEYCODE_MENU",
             "KEYCODE_MEDIA_PREVIOUS"
         )
     }

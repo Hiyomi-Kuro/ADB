@@ -1,6 +1,8 @@
 package com.kaori.adb.tools
 
 import android.content.Context
+import android.os.Build
+import com.kaori.adb.acs.AcsAdbTransport
 import com.kaori.adb.accessibility.AgentAccessibilityService
 import com.kaori.adb.agent.AgentTool
 import com.kaori.adb.agent.RiskLevel
@@ -240,10 +242,14 @@ class UiMenuTool : AgentTool {
     override val name = "ui.menu"
     override val risk = RiskLevel.GREEN
     override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        if (Build.VERSION.SDK_INT < 36) {
+            val result = AcsAdbTransport(context).execute("keyevent KEYCODE_MENU")
+            return ToolResult(result.success, if (result.success) "已执行菜单键" else result.message)
+        }
         val (service, error) = serviceOrError()
         if (error != null) return error
         val ok = service!!.openMenu()
-        return ToolResult(ok, if (ok) "已执行菜单键" else "菜单键动作失败（当前系统不支持）")
+        return ToolResult(ok, if (ok) "已执行菜单键" else "菜单键动作失败")
     }
 }
 
@@ -251,10 +257,14 @@ class UiMediaPlayPauseTool : AgentTool {
     override val name = "ui.media_play_pause"
     override val risk = RiskLevel.YELLOW
     override fun execute(context: Context, arguments: Map<String, String>): ToolResult {
+        if (Build.VERSION.SDK_INT < 36) {
+            val result = AcsAdbTransport(context).execute("keyevent KEYCODE_MEDIA_PLAY_PAUSE")
+            return ToolResult(result.success, if (result.success) "已切换媒体播放/暂停" else result.message)
+        }
         val (service, error) = serviceOrError()
         if (error != null) return error
         val ok = service!!.mediaPlayPause()
-        return ToolResult(ok, if (ok) "已切换媒体播放/暂停" else "媒体播放/暂停动作失败（当前系统不支持）")
+        return ToolResult(ok, if (ok) "已切换媒体播放/暂停" else "媒体播放/暂停动作失败")
     }
 }
 

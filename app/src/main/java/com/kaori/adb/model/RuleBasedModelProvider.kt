@@ -18,6 +18,12 @@ class RuleBasedModelProvider : ModelProvider {
         }
 
         if (text.contains("电量") || text.contains("电池")) add("device.battery")
+        if (
+            text.contains("设备状态") || text.contains("网络状态") || text.contains("当前网络") ||
+            text.contains("IP地址", ignoreCase = true) || text.contains("屏幕亮度") || text.contains("自动旋转")
+        ) {
+            add("device.state")
+        }
         when {
             text.contains("取消静音") || text.contains("解除静音") -> add("device.volume", mapOf("action" to "unmute"))
             text == "静音" || text.contains("媒体静音") -> add("device.volume", mapOf("action" to "mute"))
@@ -39,8 +45,14 @@ class RuleBasedModelProvider : ModelProvider {
         if (text.contains("内存") || text.contains("存储") || text.contains("设备信息") || text.contains("前台应用")) {
             add("device.info")
         }
+        if (text.contains("观察当前界面") || text == "观察界面" || text == "界面观察") {
+            add("ui.observe", mapOf("base64" to "false"))
+        }
         if (text.contains("读取界面") || text.contains("界面结构") || text.contains("UI树", ignoreCase = true)) {
             add("ui.dump")
+        }
+        if (text == "读取剪贴板" || text == "查看剪贴板" || text == "剪贴板内容") {
+            add("clipboard.read")
         }
         if (text == "返回" || text.endsWith("返回键")) add("ui.back")
         if (text == "回到桌面" || text == "主页" || lower == "home") add("ui.home")
@@ -51,7 +63,7 @@ class RuleBasedModelProvider : ModelProvider {
         if (text == "锁屏" || text.endsWith("锁定屏幕")) add("ui.lock_screen")
         if (text.contains("收起通知栏") || text.contains("关闭通知栏")) add("ui.dismiss_shade")
         if (text.contains("所有应用") || text.contains("应用抽屉")) add("ui.all_apps")
-        if (text.contains("菜单键") || lower == "menu") add("ui.menu")
+        if (text.contains("菜单键") || lower == "menu") add("device.keyevent", mapOf("key" to "KEYCODE_MENU"))
         if (text.contains("分屏")) add("ui.split_screen")
         if (text.contains("截屏") || text.contains("截图")) add("ui.take_screenshot")
         if (text.contains("方向键上") || lower == "dpad up") add("ui.dpad", mapOf("direction" to "up"))
@@ -61,10 +73,18 @@ class RuleBasedModelProvider : ModelProvider {
         if (text.contains("方向键确认") || text.contains("方向键中键") || lower == "dpad center") add("ui.dpad", mapOf("direction" to "center"))
         if (lower == "adb status" || text.equals("ADB状态", ignoreCase = true)) add("acs.adb.status")
 
+        parseGenericKeyEvent(text)?.let { add("device.keyevent", mapOf("key" to it)) }
+        parseWorkflow(text)?.let { add("workflow.run", mapOf("steps" to it)) }
+        val systemIntent = parseSystemIntent(text) ?: parseGenericIntent(text)
+        systemIntent?.let { add("app.intent", it) }
+        parseClipboardWrite(text)?.let { add("clipboard.write", mapOf("text" to it)) }
+        parseWaitForText(text)?.let { add("ui.wait_for", mapOf("text" to it)) }
         parseLongClick(text)?.let { add("ui.long_click", mapOf("text" to it)) }
         parseScroll(text)?.let { add("ui.scroll", mapOf("direction" to it)) }
         parseTap(text)?.let { (x, y) -> add("ui.tap", mapOf("x" to x, "y" to y)) }
         parseSwipe(text)?.let { args -> add("ui.swipe", args) }
+        parseLongPress(text)?.let { args -> add("ui.long_press", args) }
+        parsePinch(text)?.let { args -> add("ui.pinch", args) }
 
         parseClick(text)?.let { add("ui.click", mapOf("text" to it)) }
         parseInput(text)?.let { add("ui.input_text", mapOf("text" to it)) }
@@ -84,9 +104,11 @@ class RuleBasedModelProvider : ModelProvider {
             add("acs.adb.shell", mapOf("command" to command))
         }
 
-        parseLaunch(text)?.let { target ->
-            val packageName = COMMON_PACKAGES[target] ?: target
-            add("app.launch", mapOf("app" to packageName))
+        if (systemIntent == null) {
+            parseLaunch(text)?.let { target ->
+                val packageName = COMMON_PACKAGES[target] ?: target
+                add("app.launch", mapOf("app" to packageName))
+            }
         }
 
         return if (calls.isEmpty()) {
@@ -99,7 +121,60 @@ class RuleBasedModelProvider : ModelProvider {
         }
     }
 
+    private fun parseGenericKeyEvent(text: String): String? {
+        val match = Regex("""(?:按键|keyevent)\s+(KEYCODE_[A-Z0-9_]+)""", RegexOption.IGNORE_CASE)
+            .find(text) ?: return null
+        return match.groupValues[1].uppercase()
+    }
+
+    private fun parseGenericIntent(text: String): Map<String, String>? {
+        val prefixes = listOf("发送Intent ", "发送 Intent ", "intent ")
+        val prefix = prefixes.firstOrNull { text.startsWith(it, ignoreCase = true) } ?: return null
+        val payload = text.substring(prefix.length).trim()
+        if (payload.isBlank()) return null
+        val parts = payload.split(Regex("\\s+"), limit = 2)
+        return linkedMapOf("action" to parts[0]).apply {
+            parts.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }?.let { put("uri", it) }
+        }
+    }
+
+    private fun parseWorkflow(text: String): String? {
+        val prefixes = listOf("运行工作流 ", "工作流 ")
+        val prefix = prefixes.firstOrNull { text.startsWith(it, ignoreCase = true) } ?: return null
+        return text.substring(prefix.length).trim().takeIf { it.startsWith("[") && it.endsWith("]") }
+    }
+
+
+    private fun parseSystemIntent(text: String): Map<String, String>? {
+        val compact = text.replace(" ", "")
+        return when {
+            compact.contains("打开WiFi设置", ignoreCase = true) ||
+                compact.equals("打开WIFI", ignoreCase = true) ||
+                compact.contains("无线网络设置") -> mapOf("action" to "android.settings.WIFI_SETTINGS")
+            compact.contains("打开蓝牙设置", ignoreCase = true) || compact.equals("打开蓝牙", ignoreCase = true) ->
+                mapOf("action" to "android.settings.BLUETOOTH_SETTINGS")
+            compact == "打开设置" || compact == "打开系统设置" ->
+                mapOf("action" to "android.settings.SETTINGS")
+            compact == "打开相机" || compact == "启动相机" || compact == "拍照" ->
+                mapOf("action" to "android.media.action.STILL_IMAGE_CAMERA")
+            compact == "打开浏览器" || compact == "启动浏览器" ->
+                mapOf("action" to "android.intent.action.VIEW", "uri" to "https://www.google.com")
+            else -> null
+        }
+    }
+
+    private fun parseClipboardWrite(text: String): String? {
+        val match = Regex("(?:写入剪贴板|复制到剪贴板)\\s*[“\"']?([^”\"'，。；]+)").find(text) ?: return null
+        return match.groupValues[1].trim()
+    }
+
+    private fun parseWaitForText(text: String): String? {
+        val match = Regex("(?:等待文字|等待界面文字|等待出现)\\s*[“\"']?([^”\"'，。；]+)").find(text) ?: return null
+        return match.groupValues[1].trim()
+    }
+
     private fun parseLongClick(text: String): String? {
+        if (text.contains("坐标长按") || text.contains("长按坐标")) return null
         val match = Regex("(?:长按一下|长按)\\s*[“\"']?([^”\"'，。；]+)").find(text) ?: return null
         return match.groupValues[1].trim()
     }
@@ -128,6 +203,31 @@ class RuleBasedModelProvider : ModelProvider {
             "start_y" to match.groupValues[2],
             "end_x" to match.groupValues[3],
             "end_y" to match.groupValues[4]
+        )
+    }
+
+    private fun parseLongPress(text: String): Map<String, String>? {
+        val match = Regex(
+            """(?:坐标长按|长按坐标)\s*\(?\s*(\d+(?:\.\d+)?)\s*[,，]\s*(\d+(?:\.\d+)?)\s*\)?(?:\s+(\d+))?"""
+        ).find(text) ?: return null
+        val result = linkedMapOf(
+            "x" to match.groupValues[1],
+            "y" to match.groupValues[2]
+        )
+        match.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }?.let { result["duration_ms"] = it }
+        return result
+    }
+
+    private fun parsePinch(text: String): Map<String, String>? {
+        val match = Regex(
+            """(?:双指缩放|pinch)\s*\(?\s*(\d+(?:\.\d+)?)\s*[,，]\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*[-→>]\s*(\d+(?:\.\d+)?)\s*\)?""",
+            RegexOption.IGNORE_CASE
+        ).find(text) ?: return null
+        return mapOf(
+            "center_x" to match.groupValues[1],
+            "center_y" to match.groupValues[2],
+            "start_spacing" to match.groupValues[3],
+            "end_spacing" to match.groupValues[4]
         )
     }
 
